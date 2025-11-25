@@ -1,6 +1,8 @@
 import React, { useEffect, useState } from 'react';
-import { getFolderContent, createSubFolder, createDepartment, deleteItem } from '@/app/actions/browser'; // <--- Importamos deleteItem
+import { getFolderContent, createSubFolder, createDepartment, deleteItem, renameItem, moveItem } from '@/app/actions/browser'; 
 import { EditItemModal } from './EditItemModal';
+import { useMemo } from 'react';
+
 interface FileSystemItem {
   id: string;
   name: string;
@@ -11,9 +13,10 @@ interface FileSystemItem {
 interface LibraryProps {
   onLoad: (prompt: any) => void;
   initialRootId?: string | null;
+  onNavigate: (view: string, params?: any) => void; // <-- Debe estar en las props de Library
 }
 
-export const Library: React.FC<LibraryProps> = ({ onLoad, initialRootId }) => {
+export const Library: React.FC<LibraryProps> = ({ onLoad, initialRootId, onNavigate }) => { // <-- Desestructurar onNavigate aquí
   const [currentFolderId, setCurrentFolderId] = useState<string | null>(initialRootId || null);
   const [folderName, setFolderName] = useState("Inicio");
   const [parentId, setParentId] = useState<string | null>(null);
@@ -26,13 +29,12 @@ export const Library: React.FC<LibraryProps> = ({ onLoad, initialRootId }) => {
   const [newFolderName, setNewFolderName] = useState("");
   const [realCurrentIdRef, setRealCurrentIdRef] = useState("");
 
-  // Recargar si cambia la carpeta o el ID inicial
+  const [currentFolderData, setCurrentFolderData] = useState<any>(null); 
+
   useEffect(() => { 
-      // Si cambia la prop initialRootId (ej: clic en sidebar), actualizamos el estado
       if (initialRootId !== undefined) setCurrentFolderId(initialRootId);
   }, [initialRootId]);
 
-  // Efecto principal de carga
   useEffect(() => {
     loadContentWithIdFix();
   }, [currentFolderId]);
@@ -42,11 +44,12 @@ export const Library: React.FC<LibraryProps> = ({ onLoad, initialRootId }) => {
       const result = await getFolderContent(currentFolderId || undefined);
       
       if (result.success && result.data) {
+          setCurrentFolderData(result.data.currentFolder); // <-- Guardar el objeto
           setRealCurrentIdRef(result.data.currentFolder.id);
           setFolderName(result.data.currentFolder.name);
           setParentId(result.data.currentFolder.parentId);
           
-          const folders = result.data.subFolders.map((f: any) => ({ id: f.id, name: f.name, type: 'folder' as const }));
+          const folders = result.data.subFolders.map((f: any) => ({ id: f.id, name: f.name, type: 'folder' as const, meta: f }));
           const files = result.data.files.map((p: any) => ({ id: p.id, name: p.title, type: 'file' as const, meta: p }));
           setItems([...folders, ...files]);
       } else {
@@ -55,11 +58,30 @@ export const Library: React.FC<LibraryProps> = ({ onLoad, initialRootId }) => {
       setIsLoading(false);
   }
 
+  // FUNCIÓN handleGoBack (PUNTO 2 - Solución final de navegación)
+  const handleGoBack = () => {
+      // 1. Caso ESPECIAL: Si estamos dentro de un espacio personal visto desde Admin, volvemos a la lista.
+
+      
+      // 2. Navegación normal (subir un nivel)
+      if (parentId) {
+          setCurrentFolderId(parentId);
+      } else if (currentFolderId === 'ADMIN_ROOT' || currentFolderId === 'SUPER_PERSONAL_ROOT') {
+          // Si es raíz de Admin Global, volvemos al constructor o al Admin Root si hay.
+          onNavigate('constructor');
+      } else {
+           // Raíz de Mi Espacio / Mi Depto
+           onNavigate('constructor');
+      }
+  };
+
+
   const handleOpenEdit = (item: FileSystemItem, e: React.MouseEvent) => {
     e.stopPropagation(); // Evita el doble clic
     setSelectedItem(item.meta || item); // Pasamos los metadatos completos
     setIsEditModalOpen(true);
-}
+  }
+
   const handleCreateFolder = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newFolderName.trim()) return;
@@ -67,12 +89,13 @@ export const Library: React.FC<LibraryProps> = ({ onLoad, initialRootId }) => {
     setIsLoading(true);
     let success = false;
 
-    if (currentFolderId === 'ADMIN_ROOT') {
+    if (currentFolderId === 'ADMIN_ROOT' || currentFolderId === 'SUPER_PERSONAL_ROOT') {
         const res = await createDepartment(newFolderName);
         success = res.success === true;
     } else {
         if (realCurrentIdRef) {
-             const res = await createSubFolder(realCurrentIdRef, newFolderName);
+             // FIX: Orden de argumentos (nombre, id)
+             const res = await createSubFolder(newFolderName, realCurrentIdRef); 
              success = res.success === true;
         }
     }
@@ -105,16 +128,17 @@ export const Library: React.FC<LibraryProps> = ({ onLoad, initialRootId }) => {
       }
   }
 
-  const isAdminView = currentFolderId === 'ADMIN_ROOT';
+  const isAdminView = currentFolderId === 'ADMIN_ROOT' || currentFolderId === 'SUPER_PERSONAL_ROOT';
   
   return (
     <div className="p-8 max-w-7xl mx-auto h-full flex flex-col">
       {/* Barra Superior */}
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center gap-2 text-lg font-medium text-gray-700">
-            {parentId && (
+            {/* BOTÓN VOLVER (RENDERIZADO FINAL) */}
+            {(parentId || initialRootId === 'SUPER_PERSONAL_ROOT') && currentFolderId !== 'ADMIN_ROOT' && (
                 <button 
-                    onClick={() => setCurrentFolderId(parentId)}
+                    onClick={handleGoBack} // Llama a la función corregida
                     className="p-1 hover:bg-gray-100 rounded-full mr-2 transition-colors"
                     title="Atrás"
                 >
@@ -198,7 +222,7 @@ export const Library: React.FC<LibraryProps> = ({ onLoad, initialRootId }) => {
                           {item.name}
                       </span>
 
-                      {/* BOTÓN BORRAR (Ahora para TODO tipo) */}
+                      {/* BOTÓN EDITAR (Punto 2) */}
                       <button 
                         onClick={(e) => handleOpenEdit(item, e)}
                         className="absolute top-2 right-10 p-1.5 bg-white rounded-full shadow-sm opacity-0 group-hover:opacity-100 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 transition-all z-10"
@@ -206,6 +230,7 @@ export const Library: React.FC<LibraryProps> = ({ onLoad, initialRootId }) => {
                       >
                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/></svg>
                       </button>
+                      {/* BOTÓN BORRAR (Punto 2) */}
                       <button 
                         onClick={(e) => handleDelete(item.id, item.type, e)}
                         className="absolute top-2 right-2 p-1.5 bg-white rounded-full shadow-sm opacity-0 group-hover:opacity-100 text-gray-400 hover:text-red-600 hover:bg-red-50 transition-all z-10"

@@ -3,13 +3,11 @@
 import { PrismaClient } from '@prisma/client'
 import { revalidatePath } from 'next/cache'
 import { auth } from "@/auth"
+import { logAction } from './audit' // ⬅️ IMPORTACIÓN CLAVE: Para registrar acciones (Punto 3)
 
 const prisma = new PrismaClient()
 
 export async function savePrompt(data: any) {
-    // ... (El código de savePrompt NO cambia, porque usa folderId directo) ...
-    // (Copia el mismo savePrompt que tenías antes, o si quieres te lo pego completo aquí)
-    // Lo importante es getAvailableFolders abajo 👇
     try {
         const session = await auth()
         if (!session?.user?.email) return { success: false, error: 'No autorizado' }
@@ -33,6 +31,7 @@ export async function savePrompt(data: any) {
             }
         }
     
+        // 🚨 FIX: La variable newPrompt es definida y usada en el mismo scope.
         const newPrompt = await prisma.prompt.create({
           data: {
             title: data.title || "Prompt sin título",
@@ -42,8 +41,14 @@ export async function savePrompt(data: any) {
             folderId: finalFolderId!,
             createdById: user.id,
           },
-        })
-    
+        });
+        
+        // ✅ REGISTRO DE AUDITORÍA (Punto 3)
+        await logAction('CREATE_PROMPT', newPrompt.id, { 
+            title: newPrompt.title, 
+            folderId: finalFolderId
+        });
+
         await prisma.promptVersion.create({
             data: {
                 promptId: newPrompt.id,
@@ -51,7 +56,7 @@ export async function savePrompt(data: any) {
                 createdByUserId: user.id,
                 changeNote: 'Creación inicial'
             }
-        })
+        });
     
         revalidatePath('/')
         return { success: true, prompt: newPrompt }

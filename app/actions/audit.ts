@@ -6,7 +6,7 @@ import { auth } from "@/auth"
 
 const prisma = new PrismaClient()
 
-// Función central para registrar cualquier acción en la DB
+// FUNCIÓN CENTRAL DE REGISTRO (Punto 3)
 export async function logAction(action: string, entityId: string | null, details: any) {
     try {
         const session = await auth();
@@ -25,7 +25,7 @@ export async function logAction(action: string, entityId: string | null, details
     }
 }
 
-// NUEVA ACCIÓN PARA EL ADMIN: Traer todos los logs
+// OBTENER REGISTROS (Punto 3)
 export async function getAuditLogs() {
     const session = await auth();
     const user = await prisma.user.findUnique({ where: { email: session?.user?.email! } });
@@ -34,6 +34,6 @@ export async function getAuditLogs() {
     return await prisma.auditLog.findMany({
         orderBy: { timestamp: 'desc' },
         include: { user: { select: { fullName: true, email: true } } },
-        take: 100 // Límite de 100 logs
+        take: 200 
     });
 }
