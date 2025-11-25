@@ -7,14 +7,17 @@ FROM node:20-alpine AS builder
 WORKDIR /app
 RUN apk add --no-cache openssl git
 
-# Copiar y instalar dependencias
+# Copiar package*.json para cache de npm
 COPY package*.json ./
+
+# Copiar el directorio prisma (AHORA ANTES de npm install)
+# Esto asegura que prisma generate encuentre schema.prisma
+COPY prisma ./prisma/
 
 # Instalar dependencias (Esto ejecutará prisma generate via postinstall)
 RUN npm install
 
-# Copiar el código fuente
-COPY prisma ./prisma/
+# Copiar el resto del código fuente
 COPY . .
 
 # Ejecutar el build de Next.js
