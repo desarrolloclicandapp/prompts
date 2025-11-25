@@ -1,29 +1,41 @@
-# 1. Usar la imagen oficial de Node 20 (¡Esto fuerza la versión!)
-FROM node:20-alpine
+# ----------------------------------------------------
+# STAGE 1: COMPILACIÓN Y BUILD
+# ----------------------------------------------------
+FROM node:20-alpine AS builder
 
-# 2. Crear directorio de trabajo
+# Configuración
 WORKDIR /app
+RUN apk add --no-cache openssl git
 
-# 3. Instalar OpenSSL (Necesario para la base de datos Prisma)
-RUN apk add --no-cache openssl
-
-# 4. Copiar archivos de dependencias
+# Copiar y instalar dependencias
 COPY package*.json ./
 
-# 5. Copiar la carpeta de base de datos (Vital para el postinstall)
-COPY prisma ./prisma/
-
-# 6. Instalar dependencias
-# (Esto ejecutará automáticamente 'prisma generate' gracias a tu script postinstall)
+# Instalar dependencias (Esto ejecutará prisma generate via postinstall)
 RUN npm install
 
-# 7. Copiar el resto del código fuente
+# Copiar el código fuente
+COPY prisma ./prisma/
 COPY . .
 
-# 8. Construir la aplicación Next.js
-# Desactivamos telemetría para que sea más rápido
+# Ejecutar el build de Next.js
 ENV NEXT_TELEMETRY_DISABLED 1
 RUN npm run build
 
-# 9. Configurar el comando de inicio
+# ----------------------------------------------------
+# STAGE 2: PRODUCCIÓN (Optimizado y Ligero)
+# ----------------------------------------------------
+FROM node:20-alpine
+
+WORKDIR /app
+
+# Copiar solo los archivos necesarios para la ejecución (mínimo consumo de espacio)
+COPY --from=builder /app/public ./public
+COPY --from=builder /app/.next ./.next
+COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /app/package.json ./package.json
+
+# Puerto de la aplicación Next.js
+EXPOSE 3000
+
+# Comando de inicio
 CMD ["npm", "start"]
