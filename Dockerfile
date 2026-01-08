@@ -4,27 +4,27 @@
 FROM node:20-alpine AS builder
 
 WORKDIR /app
-# Instalamos dependencias de sistema necesarias
+# Dependencias del sistema
 RUN apk add --no-cache openssl git
 
-# 1. Copiamos PRIMERO los archivos de dependencias
-# Esto permite a Docker usar la caché si no has cambiado dependencias
+# 1. Copiamos archivos clave primero
 COPY package.json package-lock.json ./
-# Copiamos la carpeta prisma antes de instalar para que el postinstall funcione
 COPY prisma ./prisma/
 
-# 2. INSTALACIÓN BLINDADA (El cambio clave)
-# Usamos 'npm ci' en lugar de 'npm install'
+# 2. INSTALACIÓN ESTRICTA (¡No cambies esto a npm install!)
+# npm ci borra la carpeta node_modules y asegura versiones exactas
 RUN npm ci
 
 # 3. Copiamos el resto del código
 COPY . .
 
-# 4. Ejecutar el build de Next.js
+# 4. Construcción (Este paso fuerza a Tailwind a regenerar el CSS)
 ENV NEXT_TELEMETRY_DISABLED 1
+# Truco: Cambia el número de abajo si alguna vez necesitas forzar el borrado de caché
+ARG CACHEBUST=1 
 RUN npm run build
 
-# 5. Limpieza para producción
+# 5. Limpieza de librerías de desarrollo
 RUN npm prune --production
 
 # ----------------------------------------------------
@@ -37,7 +37,7 @@ WORKDIR /app
 # Instalación de OpenSSL para producción
 RUN apk add --no-cache openssl
 
-# Copiamos los archivos necesarios desde el builder
+# Copiar solo lo necesario desde el builder
 COPY --from=builder /app/public ./public
 COPY --from=builder /app/.next ./.next
 COPY --from=builder /app/package.json ./package.json
