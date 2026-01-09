@@ -1,43 +1,44 @@
 # ----------------------------------------------------
-# STAGE 1: COMPILACIÓN Y BUILD
+# STAGE 1: BUILD
 # ----------------------------------------------------
-FROM node:20-alpine AS builder
+FROM node:20-slim AS builder
 
 WORKDIR /app
-# Dependencias del sistema
-RUN apk add --no-cache openssl git
 
-# 1. Copiamos archivos clave primero
+# Dependencias del sistema
+RUN apt-get update && apt-get install -y openssl git \
+  && rm -rf /var/lib/apt/lists/*
+
+# Copiamos archivos clave
 COPY package.json package-lock.json ./
 COPY prisma ./prisma/
 
-# 2. INSTALACIÓN ESTRICTA (¡No cambies esto a npm install!)
-# npm ci borra la carpeta node_modules y asegura versiones exactas
+# Instalación estricta
 RUN npm ci
 
-# 3. Copiamos el resto del código
+# Copiamos el resto del código
 COPY . .
 
-# 4. Construcción (Este paso fuerza a Tailwind a regenerar el CSS)
-ENV NEXT_TELEMETRY_DISABLED 1
-# Truco: Cambia el número de abajo si alguna vez necesitas forzar el borrado de caché
-ARG CACHEBUST=1 
+ENV NEXT_TELEMETRY_DISABLED=1
+ARG CACHEBUST=1
+
+# Build (Tailwind + Next)
 RUN npm run build
 
-# 5. Limpieza de librerías de desarrollo
+# Limpieza
 RUN npm prune --production
 
 # ----------------------------------------------------
 # STAGE 2: PRODUCCIÓN
 # ----------------------------------------------------
-FROM node:20-alpine
+FROM node:20-slim
 
 WORKDIR /app
 
-# Instalación de OpenSSL para producción
-RUN apk add --no-cache openssl
+# OpenSSL para Prisma
+RUN apt-get update && apt-get install -y openssl \
+  && rm -rf /var/lib/apt/lists/*
 
-# Copiar solo lo necesario desde el builder
 COPY --from=builder /app/public ./public
 COPY --from=builder /app/.next ./.next
 COPY --from=builder /app/package.json ./package.json
